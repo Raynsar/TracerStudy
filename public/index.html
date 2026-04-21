@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TracerStudy Alumni — Sistem Pengumpulan Data</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="login-wrap" id="loginPage">
+    <div class="login-box">
+      <div class="login-brand">
+        <div class="chip">Tracer Study System</div>
+        <h1>TracerStudy Portal</h1>
+        <p>Sistem Pengumpulan Data Alumni &mdash; Rekayasa Kebutuhan</p>
+      </div>
+      <div class="fgroup"><label>Username</label><input type="text" id="lUser" placeholder="Masukkan username" /></div>
+      <div class="fgroup"><label>Password</label><input type="password" id="lPass" placeholder="Masukkan password" /></div>
+      <button class="btn-login" onclick="doLogin()">Masuk ke Sistem</button>
+      <div class="err-msg" id="lErr">Username atau password tidak valid</div>
+      <div class="login-hint">
+        <strong>Akun tersedia:</strong><br />
+        Administrator &rarr; <code>admin</code> / <code>admin123</code><br />
+        Operator &rarr; <code>operator</code> / <code>op2024</code><br />
+        Viewer &rarr; <code>viewer</code> / <code>view2024</code>
+      </div>
+    </div>
+  </div>
+
+  <div id="mainApp" class="hidden">
+    <div class="navbar">
+      <div class="nav-brand"><div class="nav-dot"></div><span class="nav-title">TracerStudy Alumni</span></div>
+      <div class="nav-right"><span class="nav-role" id="navRole"></span><button class="btn-out" onclick="doLogout()">Keluar</button></div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" onclick="goTab('dashboard',this)">&#9641; Dashboard</button>
+      <button class="tab"    onclick="goTab('data',this)">&#9776; Data Alumni</button>
+      <button class="tab"    onclick="goTab('tambah',this)">&#9998; Edit Data</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="content" id="tab-dashboard">
+      <div class="stats" id="dashStats"></div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem">
+        <div class="dash-info"><div class="dash-info-title">Alumni Terbaru Diperbarui</div><div id="dashRecent"><div class="empty">Belum ada data</div></div></div>
+        <div class="dash-info"><div class="dash-info-title">Kelengkapan Data</div><div id="dashComplete"></div></div>
+      </div>
+    </div>
+
+    <!-- DATA ALUMNI -->
+    <div class="content hidden" id="tab-data">
+      <div class="tbar">
+        <div class="tbar-left">
+          <span class="tbar-title">Data Alumni</span>
+          <span id="rowCount" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="search-wrap"><span class="search-icon">&#128269;</span><input type="text" id="searchQ" placeholder="Cari nama, NIM, kerja, prodi..." oninput="renderTable()" /></div>
+          <select class="filter-sel" id="filterFak" onchange="renderTable()"><option value="">Semua Fakultas</option></select>
+          <select class="filter-sel" id="filterStatus" onchange="renderTable()">
+            <option value="">Semua Status</option>
+            <option value="PNS">PNS / ASN</option>
+            <option value="Swasta">Swasta</option>
+            <option value="Wirausaha">Wirausaha</option>
+          </select>
+          <select class="filter-sel" id="filterData" onchange="renderTable()">
+            <option value="">Semua</option>
+            <option value="lengkap">Data Lengkap</option>
+            <option value="belum">Belum Lengkap</option>
+          </select>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:22%">Nama</th><th style="width:10%">Fak.</th>
+            <th style="width:15%">Prodi</th><th style="width:10%">Lulus</th>
+            <th style="width:17%">Tempat Kerja</th><th style="width:9%">Status</th>
+            <th style="width:8%">Data</th><th style="width:9%">Aksi</th>
+          </tr></thead>
+          <tbody id="tblBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- EDIT DATA -->
+    <div class="content hidden" id="tab-tambah">
+      <div class="form-card">
+        <div class="form-title" id="formTitle">Edit Data Alumni</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="fgroup"><label>Nama Lengkap</label><input type="text" id="f_nama" /></div>
+          <div class="fgroup"><label>NIM</label><input type="text" id="f_nim" disabled style="opacity:.5" /></div>
+        </div>
+        <div class="form-sec">Sosial Media Pribadi</div>
+        <div class="form-grid">
+          <div class="fgroup"><label>LinkedIn</label><input type="text" id="f_linkedin" placeholder="linkedin.com/in/..." /></div>
+          <div class="fgroup"><label>Instagram</label><input type="text" id="f_ig" placeholder="@username" /></div>
+          <div class="fgroup"><label>Facebook</label><input type="text" id="f_fb" placeholder="facebook.com/..." /></div>
+          <div class="fgroup"><label>TikTok</label><input type="text" id="f_tiktok" placeholder="@username" /></div>
+        </div>
+        <div class="form-sec">Kontak Personal</div>
+        <div class="form-grid">
+          <div class="fgroup"><label>Email</label><input type="email" id="f_email" /></div>
+          <div class="fgroup"><label>No. HP / WhatsApp</label><input type="text" id="f_hp" placeholder="+62 8xx..." /></div>
+        </div>
+        <div class="form-sec">Informasi Pekerjaan</div>
+        <div class="form-grid">
+          <div class="fgroup"><label>Tempat Bekerja</label><input type="text" id="f_kerja" /></div>
+          <div class="fgroup"><label>Posisi / Jabatan</label><input type="text" id="f_posisi" /></div>
+          <div class="fgroup"><label>Status Kepegawaian</label>
+            <select id="f_status">
+              <option value="">-- Pilih --</option>
+              <option value="PNS">PNS / ASN</option>
+              <option value="Swasta">Swasta / Karyawan</option>
+              <option value="Wirausaha">Wirausaha</option>
+            </select>
+          </div>
+          <div class="fgroup"><label>Alamat Tempat Kerja</label><input type="text" id="f_alamat_kerja" placeholder="Kota, Provinsi" /></div>
+        </div>
+        <div class="form-sec">Sosial Media Tempat Kerja</div>
+        <div class="form-grid">
+          <div class="fgroup"><label>LinkedIn Perusahaan</label><input type="text" id="f_kerja_linkedin" /></div>
+          <div class="fgroup"><label>Instagram Perusahaan</label><input type="text" id="f_kerja_ig" /></div>
+          <div class="fgroup"><label>Facebook Perusahaan</label><input type="text" id="f_kerja_fb" /></div>
+          <div class="fgroup"><label>Website</label><input type="text" id="f_kerja_web" /></div>
+        </div>
+        <div class="form-row">
+          <button class="btn-primary" onclick="saveAlumni()">Simpan Data</button>
+          <button class="btn-cancel" onclick="resetForm()">Reset</button>
+        </div>
+        <div class="form-msg" id="formMsg"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="detailModal">
+    <div class="modal">
+      <div class="modal-hdr"><span id="modalName">Detail Alumni</span><span class="modal-close" onclick="closeModal()">&#215;</span></div>
+      <div id="modalContent"></div>
+      <div class="modal-foot">
+        <button class="btn-sm btn-ai" onclick="editFromDetail()">&#9998; Edit Data</button>
+        <button class="btn-sm" onclick="closeModal()">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
