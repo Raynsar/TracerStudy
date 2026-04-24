@@ -74,5 +74,15 @@ SELECT
   COUNT(*) FILTER (WHERE tiktok<>'')            AS punya_tiktok
 FROM alumni;
 
+-- ── Function: get distinct fakultas (dipakai endpoint /api/alumni/facets) ──
+CREATE OR REPLACE FUNCTION get_facets()
+RETURNS TABLE(fakultas TEXT)
+LANGUAGE sql SECURITY DEFINER AS $$
+  SELECT DISTINCT fakultas
+  FROM   alumni
+  WHERE  fakultas IS NOT NULL AND fakultas <> ''
+  ORDER  BY fakultas;
+$$;
+
 -- Cek hasil:
 SELECT 'Schema berhasil dibuat!' AS status;

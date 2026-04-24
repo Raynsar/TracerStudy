@@ -327,31 +327,100 @@ app.get('/api/alumni', async (req, res) => {
     return res.status(503).json({ error: 'Supabase belum dikonfigurasi' });
   }
 
-  const { page = 1, per_page = 25, search = '', fakultas = '', status = '' } = req.query;
+  const {
+    page = 1, per_page = 25,
+    search = '', fakultas = '', status = '',
+    ai_searched = '',
+    order_by = 'id', order_dir = 'asc'
+  } = req.query;
   const offset = (page - 1) * per_page;
 
   let filters = [];
-  if (search)   filters.push(`nama=ilike.*${search}*`);
-  if (fakultas) filters.push(`fakultas=eq.${encodeURIComponent(fakultas)}`);
-  if (status)   filters.push(`status=eq.${status}`);
+  if (search)          filters.push(`nama=ilike.*${encodeURIComponent(search)}*`);
+  if (fakultas)        filters.push(`fakultas=eq.${encodeURIComponent(fakultas)}`);
+  if (status)          filters.push(`status=eq.${encodeURIComponent(status)}`);
+  if (ai_searched !== '') filters.push(`ai_searched=eq.${ai_searched}`);
 
   const filterStr = filters.length ? '&' + filters.join('&') : '';
-  const url = `${SUPABASE_URL}/rest/v1/alumni?select=*${filterStr}&order=id&offset=${offset}&limit=${per_page}`;
+  const orderStr  = `${order_by}.${order_dir}`;
+  const url = `${SUPABASE_URL}/rest/v1/alumni?select=*${filterStr}&order=${orderStr}&offset=${offset}&limit=${per_page}`;
 
   try {
     const r = await fetch(url, {
       headers: {
-        apikey:          SUPABASE_KEY,
-        Authorization:   `Bearer ${SUPABASE_KEY}`,
-        'Range-Unit':    'items',
-        'Range':         `${offset}-${parseInt(offset) + parseInt(per_page) - 1}`,
-        'Prefer':        'count=exact'
+        apikey:        SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Range-Unit':  'items',
+        'Range':       `${offset}-${parseInt(offset) + parseInt(per_page) - 1}`,
+        'Prefer':      'count=exact'
       }
     });
 
     const total = parseInt(r.headers.get('Content-Range')?.split('/')[1] || '0');
     const rows  = await r.json();
     res.json({ ok: true, data: rows, total, page: parseInt(page), per_page: parseInt(per_page) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+
+// Cache facets agar tidak query ulang setiap request
+let _facetsCache = null;
+let _facetsCacheAt = 0;
+
+// ============================================================
+//  ENDPOINT: GET /api/alumni/facets
+//  Ambil nilai unik fakultas via RPC (jalankan SQL di Supabase!)
+//  atau fallback paginate jika RPC belum ada
+// ============================================================
+app.get('/api/alumni/facets', async (req, res) => {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return res.status(503).json({ error: 'Supabase belum dikonfigurasi' });
+  }
+
+  // Kembalikan cache jika masih segar (10 menit)
+  if (_facetsCache && Date.now() - _facetsCacheAt < 600_000) {
+    return res.json({ ok: true, fakultas: _facetsCache });
+  }
+
+  const h = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+
+  // Coba via RPC function get_facets() — jalankan SQL di bawah di Supabase dulu
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_facets`, { method: 'POST', headers: h, body: '{}' });
+    if (r.ok) {
+      const data = await r.json();
+      const fakultas = Array.isArray(data) ? data.map(x => x.fakultas).filter(Boolean).sort() : [];
+      if (fakultas.length > 0) {
+        _facetsCache = fakultas; _facetsCacheAt = Date.now();
+        return res.json({ ok: true, fakultas });
+      }
+    }
+  } catch (e) { /* fall through ke paginate */ }
+
+  // Fallback: scan semua halaman sampai habis, kumpulkan nilai unik
+  try {
+    const PAGE = 5000;
+    const unique = new Set();
+    let offset = 0;
+    for (let i = 0; i < 50; i++) {          // max 250k rows scan
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/alumni?select=fakultas&order=id.asc&limit=${PAGE}&offset=${offset}`,
+        { headers: h }
+      );
+      const rows = await r.json();
+      if (!Array.isArray(rows) || rows.length === 0) break;
+      rows.forEach(x => x.fakultas && unique.add(x.fakultas));
+      offset += rows.length;
+      if (rows.length < PAGE) break;
+    }
+    const fakultas = [...unique].sort();
+    _facetsCache = fakultas; _facetsCacheAt = Date.now();
+    res.json({ ok: true, fakultas });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
@@ -469,6 +538,87 @@ app.get('/api/stats', async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+
+// ============================================================
+//  ENDPOINT: POST /api/batch-ai
+//  Proses alumni yang belum di-AI-search secara batch
+//  Lewati 500 data pertama (id <= 500) yang sudah diisi manual
+// ============================================================
+app.post('/api/batch-ai', async (req, res) => {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return res.status(503).json({ error: 'Supabase belum dikonfigurasi' });
+  }
+
+  const hasGemini    = !!process.env.GEMINI_API_KEY;
+  const hasGroq      = !!process.env.GROQ_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+
+  if (!hasGemini && !hasGroq && !hasAnthropic) {
+    return res.status(500).json({ error: 'Tidak ada AI API key yang dikonfigurasi' });
+  }
+
+  const { batch_size = 5 } = req.body;
+  const safeSize = Math.min(parseInt(batch_size) || 5, 20);
+
+  // Ambil alumni yang belum diproses (ai_searched=false, id > 500)
+  const fetchUrl = `${SUPABASE_URL}/rest/v1/alumni?ai_searched=eq.false&id=gt.500&select=*&order=id.asc&limit=${safeSize}`;
+  const supHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+
+  let alumni;
+  try {
+    const r = await fetch(fetchUrl, { headers: supHeaders });
+    alumni  = await r.json();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'Gagal ambil data: ' + e.message });
+  }
+
+  if (!Array.isArray(alumni) || alumni.length === 0) {
+    // Hitung sisa yang belum diproses
+    const cntR = await fetch(
+      `${SUPABASE_URL}/rest/v1/alumni?ai_searched=eq.false&id=gt.500&select=id`,
+      { headers: { ...supHeaders, Prefer: 'count=exact' } }
+    );
+    const remaining = parseInt(cntR.headers.get('Content-Range')?.split('/')[1] || '0');
+    return res.json({ ok: true, processed: 0, errors: 0, remaining });
+  }
+
+  let processed = 0, errors = 0;
+  const provider = hasGemini ? 'Gemini' : hasGroq ? 'Groq' : 'Anthropic';
+
+  for (const a of alumni) {
+    try {
+      let result;
+      if (hasGemini)    result = await searchWithGemini(a);
+      else if (hasGroq) result = await searchWithGroq(a);
+      else              result = (await searchWithAnthropic(a)).result;
+
+      await fetch(`${SUPABASE_URL}/rest/v1/alumni?id=eq.${a.id}`, {
+        method:  'PATCH',
+        headers: { ...supHeaders, Prefer: 'return=minimal' },
+        body:    JSON.stringify({ ...result, ai_searched: true, updated_at: new Date().toISOString() })
+      });
+
+      console.log(`[BatchAI/${provider}] ✓ ${a.nama} (id=${a.id})`);
+      processed++;
+    } catch (e) {
+      console.error(`[BatchAI] ✗ ${a.nama}:`, e.message);
+      errors++;
+    }
+  }
+
+  // Hitung sisa
+  const cntR = await fetch(
+    `${SUPABASE_URL}/rest/v1/alumni?ai_searched=eq.false&id=gt.500&select=id`,
+    { headers: { ...supHeaders, Prefer: 'count=exact' } }
+  );
+  const remaining = parseInt(cntR.headers.get('Content-Range')?.split('/')[1] || '0');
+
+  res.json({ ok: true, processed, errors, remaining, provider });
 });
 
 
