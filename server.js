@@ -27,7 +27,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -390,6 +390,58 @@ app.patch('/api/alumni/:id', async (req, res) => {
     const rows = await r.json();
     res.json({ ok: true, data: rows[0] });
   } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+
+// ============================================================
+//  ENDPOINT: POST /api/alumni/bulk
+//  Bulk insert alumni (untuk seed data dari Excel / ALUMNI_DATA)
+//  Dikirim dalam batch 500, sehingga tidak timeout
+// ============================================================
+app.post('/api/alumni/bulk', async (req, res) => {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    return res.status(503).json({ error: 'Supabase belum dikonfigurasi' });
+  }
+
+  const { records } = req.body;
+  if (!Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ error: 'records harus berupa array non-kosong' });
+  }
+
+  const BATCH = 500;
+  let inserted = 0;
+
+  try {
+    for (let i = 0; i < records.length; i += BATCH) {
+      const batch = records.slice(i, i + BATCH).map(r => {
+        const { id, ...rest } = r;
+        return rest;
+      });
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/alumni`, {
+        method:  'POST',
+        headers: {
+          apikey:         SUPABASE_KEY,
+          Authorization:  `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer:         'return=minimal'
+        },
+        body: JSON.stringify(batch)
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error(`Batch ${Math.floor(i / BATCH) + 1} gagal: ${txt}`);
+      }
+      inserted += batch.length;
+      console.log(`[Bulk] Inserted ${inserted}/${records.length}`);
+    }
+    res.json({ ok: true, inserted });
+  } catch (e) {
+    console.error('[Bulk] Error:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });

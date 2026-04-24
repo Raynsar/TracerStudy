@@ -45,6 +45,24 @@
         <div class="dash-info"><div class="dash-info-title">Alumni Terbaru Diperbarui</div><div id="dashRecent"><div class="empty">Belum ada data</div></div></div>
         <div class="dash-info"><div class="dash-info-title">Kelengkapan Data</div><div id="dashComplete"></div></div>
       </div>
+
+      <!-- Panel Upload ke Supabase — hanya tampil untuk Administrator -->
+      <div class="dash-info" id="seedPanel" style="display:none;margin-top:1rem">
+        <div class="dash-info-title">&#128190; Upload Data ke Supabase</div>
+        <p style="font-size:13px;color:var(--text2);margin:8px 0">
+          Kirim semua <strong id="seedCount">—</strong> data alumni yang tersimpan lokal ke database Supabase.
+          Proses dijalankan dalam batch 500 data untuk menghindari timeout.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          <button class="btn-primary" id="btnSeed" onclick="seedToSupabase()">&#128640; Upload ke Supabase</button>
+        </div>
+        <div id="seedProgress" style="display:none">
+          <div style="background:var(--bg2);border-radius:6px;height:12px;overflow:hidden;margin-bottom:6px">
+            <div id="seedBar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+          </div>
+          <div id="seedMsg" style="font-size:12px;color:var(--text2)">Mempersiapkan...</div>
+        </div>
+      </div>
     </div>
 
     <!-- DATA ALUMNI -->
@@ -146,5 +164,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="seed-admin.js"></script>
 </body>
 </html>

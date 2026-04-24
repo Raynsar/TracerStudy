@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import json; data=json.load\\(open\\('d:/RAYAN/UMM/Semester 6/Rekayasa Kebutuhan/Tugas/TracerStudy/alumni_dummy_15k.json'\\)\\); print\\('Records:', len\\(data\\)\\); print\\('Keys:', list\\(data[0].keys\\(\\)\\) if data else 'empty'\\)\")",
+      "Bash(npm install *)"
+    ]
+  }
+}
